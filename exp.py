@@ -13,7 +13,8 @@ from tqdm import tqdm
 from PIL import Image as im
 
 from models.generator import Generator
-# from models.discriminator import Discriminator
+from models.discriminator import Discriminator
+from models.losses import GANLoss
 from dataloader.dataloader import load_data
 from utils import output_namespace, print_log, set_seed, check_dir
 from recorder import Recorder
@@ -75,8 +76,8 @@ class Exp:
         args = self.args
         self.model = Generator(tuple(args.in_shape), args.hid_S,
                            args.hid_T, args.N_S, args.N_T).to(self.device)
-        # self.spatial_discriminator = SNTemporalPatchGANDiscriminator(args.image_channels, conv_by='2d').to(self.device)
-        # self.discriminator = SNTemporalPatchGANDiscriminator(args.image_channels).to(self.device)
+        self.spatial_discriminator = Discriminator(args.image_channels, conv_by='2d').to(self.device)
+        self.temporal_discriminator = Discriminator(args.image_channels).to(self.device)
     
     def _try_resume_trained_model(self, path):
         if path:
@@ -85,6 +86,10 @@ class Exp:
                 checkpoint = torch.load(path)
                 self.model.load_state_dict(checkpoint['GENERATOR_STATE_DICT'])
                 self.generator_optimizer.load_state_dict(checkpoint['GENERATOR_OPTIMIZER_STATE_DICT'])
+                self.spatial_discriminator.load_state_dict(checkpoint['SPATIAL_DISCRIMINATOR_STATE_DICT'])
+                self.spatial_discriminator_optimizer.load_state_dict(checkpoint['SPATIAL_DISCRIMINATOR_OPTIMIZER_STATE_DICT'])
+                self.temporal_discriminator.load_state_dict(checkpoint['TEMPORAL_DISCRIMINATOR_STATE_DICT'])
+                self.temporal_discriminator_optimizer.load_state_dict(checkpoint['TEMPORAL_DISCRIMINATOR_OPTIMIZER_STATE_DICT'])
             else:
                 raise (ValueError('Resume path does not exist'))
 
@@ -97,18 +102,32 @@ class Exp:
         self.generator_optimizer = torch.optim.Adam(
             self.model.parameters(), lr=self.args.lr)
 
+        self.spatial_discriminator_optimizer = torch.optim.SGD(
+            self.spatial_discriminator.parameters(),
+            lr=self.args.lr_D, momentum=0.9
+        )
+
+        self.temporal_discriminator_optimizer = torch.optim.SGD(
+            self.temporal_discriminator.parameters(),
+            lr=self.args.lr_D, momentum=0.9
+        )
+
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
             self.generator_optimizer, max_lr=self.args.lr, steps_per_epoch=len(self.train_loader), epochs=self.args.epochs)
         return self.generator_optimizer
     
     def _select_criterion(self):
         self.generator_criterion = torch.nn.MSELoss()
-        # self.criterion_adv = GANLoss(device=self.device, gan_type='lsgan').to(self.device)
+        self.criterion_adv = GANLoss(device=self.device, gan_type='lsgan').to(self.device)
 
     def _save(self, name=''):
         torch.save({
             'GENERATOR_STATE_DICT': self.model.state_dict(),
             'GENERATOR_OPTIMIZER_STATE_DICT': self.generator_optimizer.state_dict(),
+            'SPATIAL_DISCRIMINATOR_STATE_DICT': self.spatial_discriminator.state_dict(),
+            'SPATIAL_DISCRIMINATOR_OPTIMIZER_STATE_DICT': self.spatial_discriminator_optimizer.state_dict(),
+            'TEMPORAL_DISCRIMINATOR_STATE_DICT': self.temporal_discriminator.state_dict(),
+            'TEMPORAL_DISCRIMINATOR_OPTIMIZER_STATE_DICT': self.temporal_discriminator.state_dict()
         }, os.path.join(
             self.checkpoints_path, name + '.pth'))
         state = self.scheduler.state_dict()
@@ -147,30 +166,67 @@ class Exp:
             start_time = time.time()
             d_losses = []
             train_losses = []
+            non_gan_loss = []
+            spatial_discriminator_losses = []
+            temporal_discriminator_losses = []
 
             train_pbar = tqdm(self.train_loader)
 
             for batch_x, batch_y in train_pbar:
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+
+                # Generate images in eval mode
+                self.model.eval()
+                with torch.no_grad():
+                    pred_y = self._predict(batch_x)
+
                 # #===============================
-                # # Discriminator Network Training
+                # # Spatial Discriminator Network Training
                 # #===============================
 
-                # # Loss with MNIST image inputs and real_targets as labels
-                # discriminator.train()
-                # d_loss = discriminator(batch_x, real_targets)
+                self.spatial_discriminator.train()
+                # Optimizer updates the discriminator parameters
+                self.spatial_discriminator_optimizer.zero_grad()
 
-                # # Generate images in eval mode
-                # generator.eval()
-                # with torch.no_grad():
-                #     generated_images = generator(batch_size)
+                d_real = self.spatial_discriminator(self.merge_temporal_dim_to_batch_dim(batch_y), transpose=False)
+                loss_d_real = self.criterion_adv(d_real, True, is_disc=True) * 0.5
+                loss_d_real.backward()
 
-                # # Loss with generated image inputs and fake_targets as labels
-                # d_loss += discriminator(generated_images, fake_targets)
+                d_fake = self.spatial_discriminator(self.merge_temporal_dim_to_batch_dim(pred_y.detach()), transpose=False)
+                loss_d_fake = self.criterion_adv(d_fake, False, is_disc=True) * 0.5
+                loss_d_fake.backward()
+                self.spatial_discriminator_optimizer.step()
 
-                # # Optimizer updates the discriminator parameters
-                # d_optimizer.zero_grad()
-                # d_loss.backward()
-                # d_optimizer.step()
+                d_loss = loss_d_real + loss_d_fake
+                spatial_discriminator_losses.append(d_loss.item())
+
+                # #===============================
+                # # Temporal Discriminator Network Training
+                # #===============================
+
+                self.temporal_discriminator.train()
+                d_real = self.temporal_discriminator(batch_y)
+                loss_d_real = self.criterion_adv(d_real, True, is_disc=True) * 0.5
+                loss_d_real.backward()
+
+                d_fake = self.temporal_discriminator(pred_y.detach())
+                loss_d_fake = self.criterion_adv(d_fake, False, is_disc=True) * 0.5
+                loss_d_fake.backward()
+
+                # Optimizer updates the discriminator parameters
+                self.temporal_discriminator_optimizer.zero_grad()
+
+                d_real = self.spatial_discriminator(self.merge_temporal_dim_to_batch_dim(batch_y), transpose=False)
+                loss_d_real = self.criterion_adv(d_real, True, is_disc=True) * 0.5
+                loss_d_real.backward()
+
+                d_fake = self.spatial_discriminator(self.merge_temporal_dim_to_batch_dim(pred_y.detach()), transpose=False)
+                loss_d_fake = self.criterion_adv(d_fake, False, is_disc=True) * 0.5
+                loss_d_fake.backward()
+                self.temporal_discriminator_optimizer.step()
+
+                d_loss = loss_d_real + loss_d_fake
+                temporal_discriminator_losses.append(d_loss.item())
 
                 #===============================
                 # Generator Network Training
@@ -178,32 +234,46 @@ class Exp:
 
                 # Generate images in train mode
                 self.model.train()
-                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y = self.model(batch_x)
+                self.spatial_discriminator.eval()
+                self.temporal_discriminator.eval()
+                pred_y = self._predict(batch_x)
 
-                # Loss with generated image inputs and real_targets as labels
-                # discriminator.eval() # eval but we still need gradients
-                g_loss = self.generator_criterion(pred_y, batch_y)
+                loss = self.criterion(pred_y, batch_y)
+                non_gan_loss.append(loss.item())
+
+                adv_loss = self.criterion_adv(
+                    self.spatial_discriminator(self.merge_temporal_dim_to_batch_dim(pred_y), transpose=False),
+                    True,
+                    is_disc=False
+                )
+                adv_loss = adv_loss * self.lambda_spatial_adv
+                loss += adv_loss
+
+                adv_loss = self.criterion_adv(self.temporal_discriminator(pred_y), True, is_disc=False)
+                adv_loss = adv_loss * self.lambda_adv
+                loss += adv_loss
 
                 # Optimizer updates the generator parameters
                 self.generator_optimizer.zero_grad()
-                g_loss.backward()
+                loss.backward()
                 self.generator_optimizer.step()
 
                 # Keep losses for logging
                 # d_losses.append(d_loss.item())
-                train_losses.append(g_loss.item())
+                train_losses.append(loss.item())
 
                 train_pbar.set_description(
-                    f'Train loss: {train_losses[-1]:.9f}'
+                    f'Train loss: {train_losses[-1]:.9f} - Spatial Loss: {spatial_discriminator_losses[-1]:.9f} - Temporal Loss {temporal_discriminator_losses[-1]:.9f}'
                 )
 
             train_loss_average = np.average(train_losses)
+            spatial_loss_average = np.average(spatial_discriminator_losses)
+            temporal_discriminator_average = np.average(temporal_discriminator_losses)
             if epoch % args.log_step == 0:
                 with torch.no_grad():
                     vali_loss = self.vali(self.vali_loader, epoch)
                     self.interpolate(epoch + 1)
-                print_log(f"Epoch: {epoch + 1} | Train Loss: {train_loss_average:.4f} - Vali Loss: {vali_loss:.4f} | Take {(time.time() - start_time):.4f} seconds\n")
+                print_log(f"Epoch: {epoch + 1} | Train Loss: {train_loss_average:.4f} - Spatial Loss: {spatial_loss_average:.9f} - Temporal Loss {temporal_discriminator_average:.9f} - Vali Loss: {vali_loss:.4f} | Take {(time.time() - start_time):.4f} seconds\n")
 
                 recorder(vali_loss, self.model, self.path)
 
@@ -266,3 +336,7 @@ class Exp:
         for index,pred in enumerate(trues[0]):
             data = im.fromarray(np.uint8(np.squeeze(np.array(pred).transpose(1,2,0)) * 255))
             data.save(os.path.join(folder_path,'trues_'+ str(index) + '.png'))
+
+    def merge_temporal_dim_to_batch_dim(self, inputs):
+        in_shape = list(inputs.shape)
+        return inputs.view([in_shape[0] * in_shape[1]] + in_shape[2:])
