@@ -220,7 +220,7 @@ class Exp:
                 loss_d_real = self.criterion_adv(d_real, True, is_disc=True) * 0.5
                 loss_d_real.backward()
 
-                d_fake = self.temporal_discriminator(pred_y.detach(), transpose=False)
+                d_fake = self.temporal_discriminator(pred_y.detach())
                 loss_d_fake = self.criterion_adv(d_fake, False, is_disc=True) * 0.5
                 loss_d_fake.backward()
                 self.temporal_discriminator_optimizer.step()
