@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from modules import ConvSC, Inception
+from models.modules import ConvSC, Inception
 
 def stride_generator(N, reverse=False):
     strides = [1, 2]*10
