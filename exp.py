@@ -238,7 +238,7 @@ class Exp:
                 self.temporal_discriminator.eval()
                 pred_y = self._predict(batch_x)
 
-                loss = self.criterion(pred_y, batch_y)
+                loss = self.generator_criterion(pred_y, batch_y)
                 non_gan_loss.append(loss.item())
 
                 adv_loss = self.criterion_adv(
