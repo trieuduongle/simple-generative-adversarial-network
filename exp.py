@@ -272,7 +272,7 @@ class Exp:
             generator_loss_average = np.average(non_gan_loss)
             if epoch % args.log_step == 0:
                 with torch.no_grad():
-                    vali_loss = self.vali(self.vali_loader, epoch)
+                    vali_loss = self.vali(self.vali_loader)
                     self.interpolate(epoch + 1)
                 print_log(f"Epoch: {epoch + 1} | Train Loss: {train_loss_average:.4f} - Generator Loss {generator_loss_average:.9f} - Spatial Loss: {spatial_loss_average:.9f} - Temporal Loss {temporal_discriminator_average:.9f} - Vali Loss: {vali_loss:.4f} | Take {(time.time() - start_time):.4f} seconds\n")
 
