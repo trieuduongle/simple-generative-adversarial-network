@@ -98,8 +98,8 @@ class Exp:
             self.model.parameters(), lr=self.args.lr)
 
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            self.optimizer, max_lr=self.args.lr, steps_per_epoch=len(self.train_loader), epochs=self.args.epochs)
-        return self.optimizer
+            self.generator_optimizer, max_lr=self.args.lr, steps_per_epoch=len(self.train_loader), epochs=self.args.epochs)
+        return self.generator_optimizer
     
     def _select_criterion(self):
         self.generator_criterion = torch.nn.MSELoss()
@@ -108,7 +108,7 @@ class Exp:
     def _save(self, name=''):
         torch.save({
             'GENERATOR_STATE_DICT': self.model.state_dict(),
-            'GENERATOR_OPTIMIZER_STATE_DICT': self.optimizer.state_dict(),
+            'GENERATOR_OPTIMIZER_STATE_DICT': self.generator_optimizer.state_dict(),
         }, os.path.join(
             self.checkpoints_path, name + '.pth'))
         state = self.scheduler.state_dict()
