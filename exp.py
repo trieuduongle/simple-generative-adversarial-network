@@ -8,8 +8,6 @@ import logging
 import pickle
 import time
 
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
 # from torchvision.utils import make_grid
 from tqdm import tqdm
 from PIL import Image as im
@@ -20,19 +18,6 @@ from dataloader.dataloader import load_data
 from utils import output_namespace, print_log, set_seed, check_dir
 from recorder import Recorder
 from metrics import metric
-
-
-# Configuration
-epochs      = 100
-batch_size  = 64
-sample_size = 100    # Number of random values to sample
-g_lr        = 1.0e-4 # Generator's learning rate
-d_lr        = 1.0e-4 # Discriminator's learning rate
-
-# DataLoader for MNIST
-transform = transforms.ToTensor()
-dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-dataloader = DataLoader(dataset, batch_size=batch_size, drop_last=True)
 
 
 class Exp:
