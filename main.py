@@ -57,7 +57,9 @@ for epoch in range(epochs):
     d_losses = []
     g_losses = []
 
-    for images, labels in tqdm(dataloader):
+    train_pbar = tqdm(dataloader)
+
+    for images, labels in train_pbar:
         #===============================
         # Discriminator Network Training
         #===============================
@@ -99,6 +101,10 @@ for epoch in range(epochs):
         # Keep losses for logging
         d_losses.append(d_loss.item())
         g_losses.append(g_loss.item())
+
+        train_pbar.set_description(
+            f'Generator loss: {g_losses[-1]:.9f} - Discriminator loss: {d_losses[-1]:.9f}'
+        )
 
     # Print average losses
     print(epoch, np.mean(d_losses), np.mean(g_losses))
