@@ -1,6 +1,6 @@
 from torch import nn
 
-from model.blocks import (
+from models.blocks import (
     GatedConv, GatedDeconv,
     PartialConv, PartialDeconv,
     VanillaConv, VanillaDeconv
