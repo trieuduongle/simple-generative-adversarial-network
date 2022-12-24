@@ -263,17 +263,18 @@ class Exp:
                 train_losses.append(loss.item())
 
                 train_pbar.set_description(
-                    f'Train loss: {train_losses[-1]:.9f} - Spatial Loss: {spatial_discriminator_losses[-1]:.9f} - Temporal Loss {temporal_discriminator_losses[-1]:.9f}'
+                    f'Train loss: {train_losses[-1]:.9f} - Generator Loss {non_gan_loss[-1]:.9f} - Spatial Loss: {spatial_discriminator_losses[-1]:.9f} - Temporal Loss {temporal_discriminator_losses[-1]:.9f}'
                 )
 
             train_loss_average = np.average(train_losses)
             spatial_loss_average = np.average(spatial_discriminator_losses)
             temporal_discriminator_average = np.average(temporal_discriminator_losses)
+            generator_loss_average = np.average(non_gan_loss)
             if epoch % args.log_step == 0:
                 with torch.no_grad():
                     vali_loss = self.vali(self.vali_loader, epoch)
                     self.interpolate(epoch + 1)
-                print_log(f"Epoch: {epoch + 1} | Train Loss: {train_loss_average:.4f} - Spatial Loss: {spatial_loss_average:.9f} - Temporal Loss {temporal_discriminator_average:.9f} - Vali Loss: {vali_loss:.4f} | Take {(time.time() - start_time):.4f} seconds\n")
+                print_log(f"Epoch: {epoch + 1} | Train Loss: {train_loss_average:.4f} - Generator Loss {generator_loss_average:.9f} - Spatial Loss: {spatial_loss_average:.9f} - Temporal Loss {temporal_discriminator_average:.9f} - Vali Loss: {vali_loss:.4f} | Take {(time.time() - start_time):.4f} seconds\n")
 
                 recorder(vali_loss, self.model, self.path)
 
