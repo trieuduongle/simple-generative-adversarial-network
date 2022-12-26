@@ -114,6 +114,10 @@ class Exp:
 
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
             self.generator_optimizer, max_lr=self.args.lr, steps_per_epoch=len(self.train_loader), epochs=self.args.epochs)
+        self.spatial_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            self.spatial_discriminator_optimizer, max_lr=self.args.lr_D, steps_per_epoch=len(self.train_loader), epochs=self.args.epochs)
+        self.temporal_scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            self.temporal_discriminator_optimizer, max_lr=self.args.lr_D, steps_per_epoch=len(self.train_loader), epochs=self.args.epochs)
         return self.generator_optimizer
     
     def _select_criterion(self):
@@ -132,6 +136,14 @@ class Exp:
             self.checkpoints_path, name + '.pth'))
         state = self.scheduler.state_dict()
         fw = open(os.path.join(self.checkpoints_path, name + '.pkl'), 'wb')
+        pickle.dump(state, fw)
+
+        state = self.spatial_scheduler.state_dict()
+        fw = open(os.path.join(self.checkpoints_path, name + '_spatial.pkl'), 'wb')
+        pickle.dump(state, fw)
+
+        state = self.temporal_discriminator_optimizer.state_dict()
+        fw = open(os.path.join(self.checkpoints_path, name + '_temporal.pkl'), 'wb')
         pickle.dump(state, fw)
 
     def _predict(self, batch_x):
